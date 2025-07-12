@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import LoginPage from './components/LoginPage';
+import NotificationPanel from './components/NotificationPanel';
+import { searchQuestions, findSimilarQuestions, getSearchSuggestions } from './utils/searchUtils';
 import {
   AppBar,
   Toolbar,
@@ -23,7 +26,12 @@ import {
   FormControl,
   Select,
   Pagination,
-  Divider
+  Divider,
+  Autocomplete,
+  Paper,
+  List,
+  ListItem,
+  ListItemText
 } from '@mui/material';
 import {
   Search,
@@ -33,7 +41,8 @@ import {
   ThumbUp,
   Comment,
   Bookmark,
-  Person
+  Person,
+  AccountCircle
 } from '@mui/icons-material';
 
 // Modern theme with updated colors
@@ -91,22 +100,136 @@ const mockQuestions = [
   }
 ];
 
+// Mock notifications data
+const mockNotifications = [
+  {
+    id: 1,
+    type: 'answer',
+    title: 'New answer to your question',
+    message: 'Someone answered your question about SQL joins',
+    timestamp: new Date(Date.now() - 30 * 60 * 1000), // 30 minutes ago
+    read: false,
+    questionTitle: 'How to join 2 columns...'
+  },
+  {
+    id: 2,
+    type: 'comment',
+    title: 'New comment on your answer',
+    message: 'John Doe commented on your React useState answer',
+    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
+    read: false,
+    questionTitle: 'React useState not updating...'
+  },
+  {
+    id: 3,
+    type: 'vote',
+    title: 'Your answer was upvoted',
+    message: 'Your answer received 5 upvotes',
+    timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000), // 4 hours ago
+    read: true,
+    questionTitle: 'Python list comprehension...'
+  },
+  {
+    id: 4,
+    type: 'accepted',
+    title: 'Your answer was accepted',
+    message: 'Congratulations! Your answer was marked as the best solution',
+    timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
+    read: true,
+    questionTitle: 'How to center a div...'
+  },
+  {
+    id: 5,
+    type: 'mention',
+    title: 'You were mentioned',
+    message: 'Sarah mentioned you in a comment',
+    timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
+    read: true,
+    questionTitle: 'JavaScript async/await...'
+  }
+];
+
 function App() {
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState(mockQuestions);
+  const [searchSuggestions, setSearchSuggestions] = useState([]);
   const [sortBy, setSortBy] = useState('Newest');
   const [notificationAnchor, setNotificationAnchor] = useState(null);
-  const [notifications] = useState(3); // Mock notification count
+  const [showNotificationPanel, setShowNotificationPanel] = useState(false);
+  const [notifications, setNotifications] = useState(mockNotifications);
+  const [showLogin, setShowLogin] = useState(false);
+  const [user, setUser] = useState(null);
+  const [selectedQuestion, setSelectedQuestion] = useState(null);
+
+  // Calculate unread notifications count
+  const unreadNotifications = notifications.filter(n => !n.read).length;
+
+  // Handle search with debouncing
+  const handleSearch = (query) => {
+    setSearchTerm(query);
+    
+    if (query.trim()) {
+      const results = searchQuestions(query, mockQuestions, {
+        includeAnswered: true,
+        includeTags: true,
+        minScore: 0.1,
+        maxResults: 20
+      });
+      setSearchResults(results);
+      
+      // Get search suggestions
+      const suggestions = getSearchSuggestions(query, mockQuestions, 5);
+      setSearchSuggestions(suggestions);
+    } else {
+      setSearchResults(mockQuestions);
+      setSearchSuggestions([]);
+    }
+  };
+
+  // Handle login
+  const handleLogin = (userData) => {
+    setUser(userData);
+    setShowLogin(false);
+  };
+
+  // Handle logout
+  const handleLogout = () => {
+    setUser(null);
+  };
+
+  // Handle notification actions
+  const handleMarkAsRead = (notificationId) => {
+    setNotifications(prev => 
+      prev.map(n => 
+        n.id === notificationId ? { ...n, read: true } : n
+      )
+    );
+  };
+
+  const handleDeleteNotification = (notificationId) => {
+    setNotifications(prev => prev.filter(n => n.id !== notificationId));
+  };
 
   const handleNotificationClick = (event) => {
-    setNotificationAnchor(event.currentTarget);
+    setShowNotificationPanel(true);
   };
 
   const handleNotificationClose = () => {
-    setNotificationAnchor(null);
+    setShowNotificationPanel(false);
+  };
+
+  // Handle question click to show similar questions
+  const handleQuestionClick = (question) => {
+    setSelectedQuestion(question);
+    const similar = findSimilarQuestions(question, mockQuestions, 0.2, 3);
+    console.log('Similar questions:', similar);
   };
 
   const QuestionCard = ({ question }) => (
-    <Card sx={{ mb: 2, '&:hover': { boxShadow: 3 }, cursor: 'pointer' }}>
+    <Card 
+      sx={{ mb: 2, '&:hover': { boxShadow: 3 }, cursor: 'pointer' }}
+      onClick={() => handleQuestionClick(question)}
+    >
       <CardContent sx={{ p: 3 }}>
         <Box display="flex" gap={2}>
           {/* Vote/Answer Stats */}
@@ -126,6 +249,13 @@ function App() {
           <Box flex={1}>
             <Typography variant="h6" component="h3" sx={{ mb: 1, color: '#6366f1', fontWeight: 500 }}>
               {question.title}
+              {question.searchScore && (
+                <Chip 
+                  label={`${Math.round(question.searchScore * 100)}% match`}
+                  size="small"
+                  sx={{ ml: 1, fontSize: '0.7rem' }}
+                />
+              )}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               {question.description}
@@ -183,7 +313,7 @@ function App() {
               fullWidth
               placeholder="Search..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => handleSearch(e.target.value)}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
@@ -213,38 +343,37 @@ function App() {
               onClick={handleNotificationClick}
               sx={{ color: '#9fa6ad', '&:hover': { color: '#ec4899' } }}
             >
-              <Badge badgeContent={notifications} color="error">
+              <Badge badgeContent={unreadNotifications} color="error">
                 <Notifications />
               </Badge>
             </IconButton>
 
-            <Menu
-              anchorEl={notificationAnchor}
-              open={Boolean(notificationAnchor)}
-              onClose={handleNotificationClose}
-            >
-              <MenuItem onClick={handleNotificationClose}>
-                New answer to your question
-              </MenuItem>
-              <MenuItem onClick={handleNotificationClose}>
-                Someone mentioned you in a comment
-              </MenuItem>
-              <MenuItem onClick={handleNotificationClose}>
-                Your answer was accepted
-              </MenuItem>
-            </Menu>
-
-            <Button
-              variant="contained"
-              sx={{
-                bgcolor: '#ec4899',
-                '&:hover': { bgcolor: '#db2777' },
-                textTransform: 'none',
-                fontWeight: 500
-              }}
-            >
-              Login
-            </Button>
+            {user ? (
+              <Box display="flex" alignItems="center" gap={1}>
+                <Avatar sx={{ width: 32, height: 32, bgcolor: '#ec4899' }}>
+                  {user.username.charAt(0).toUpperCase()}
+                </Avatar>
+                <Button
+                  onClick={handleLogout}
+                  sx={{ color: '#9fa6ad', textTransform: 'none' }}
+                >
+                  Logout
+                </Button>
+              </Box>
+            ) : (
+              <Button
+                variant="contained"
+                onClick={() => setShowLogin(true)}
+                sx={{
+                  bgcolor: '#ec4899',
+                  '&:hover': { bgcolor: '#db2777' },
+                  textTransform: 'none',
+                  fontWeight: 500
+                }}
+              >
+                Login
+              </Button>
+            )}
           </Box>
         </Toolbar>
       </AppBar>
@@ -277,7 +406,12 @@ function App() {
             {/* Filters */}
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
               <Typography variant="body1">
-                {mockQuestions.length} questions
+                {searchResults.length} questions
+                {searchTerm && (
+                  <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                    for "{searchTerm}"
+                  </Typography>
+                )}
               </Typography>
 
               <Box display="flex" gap={1}>
@@ -314,9 +448,27 @@ function App() {
 
             {/* Questions List */}
             <Box>
-              {mockQuestions.map((question) => (
+              {searchResults.map((question) => (
                 <QuestionCard key={question.id} question={question} />
               ))}
+              
+              {searchResults.length === 0 && searchTerm && (
+                <Card sx={{ p: 4, textAlign: 'center' }}>
+                  <Typography variant="h6" color="text.secondary" gutterBottom>
+                    No questions found
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Try adjusting your search terms or browse all questions
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    onClick={() => handleSearch('')}
+                    sx={{ mt: 2, textTransform: 'none' }}
+                  >
+                    Show all questions
+                  </Button>
+                </Card>
+              )}
             </Box>
 
             {/* Pagination */}
@@ -362,6 +514,23 @@ function App() {
           </Box>
         </Box>
       </Container>
+
+      {/* Login Modal */}
+      {showLogin && (
+        <LoginPage
+          onLogin={handleLogin}
+          onClose={() => setShowLogin(false)}
+        />
+      )}
+
+      {/* Notification Panel */}
+      <NotificationPanel
+        open={showNotificationPanel}
+        onClose={handleNotificationClose}
+        notifications={notifications}
+        onMarkAsRead={handleMarkAsRead}
+        onDeleteNotification={handleDeleteNotification}
+      />
     </ThemeProvider>
   );
 }
