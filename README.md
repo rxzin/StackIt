@@ -2,7 +2,6 @@
 - Team Name: SNaRledCoders
 - Team Members: Shrey (L), Razin, Niralee
 - Occasion: Odoo Hackathon 2025
-<br>
 
 ## Problem Statement 2: <br>
 StackIt is a minimal question-and-answer platform that supports collaborative
